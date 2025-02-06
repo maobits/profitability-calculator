@@ -98,4 +98,4 @@ This project is licensed under the MIT License.
 ---
 **Author:** Maobits
 **Contact:** admin@maobits.com  
-**GitHub:** [your-repo](https://github.com/maobits/profitability-calculator)
+**GitHub:** [profitability-calculator](https://github.com/maobits/profitability-calculator)
