@@ -40,7 +40,8 @@ app.post("/procesar-transacciones", async (req, res) => {
     res.json({ historial: posicion.historial, estadoActual: resultado });
 });
 
-// Iniciar el servidor
-app.listen(port, () => {
-    console.log(`✅ Servidor ejecutándose en http://localhost:${port}`);
+// Iniciar el servidor en la IP pública
+const HOST = '0.0.0.0'; // Escuchar en todas las interfaces, incluida la IP pública
+app.listen(port, HOST, () => {
+    console.log(`✅ Servidor ejecutándose en http://52.41.36.82:${port}`);
 });
