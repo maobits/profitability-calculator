@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const API_URL = 'http://localhost:3000/api/yfinance/quote/';
+const API_URL = 'https://localhost:3000/api/yfinance/quote/';
 const API_KEY = '12345678-9abc-def0-1234-56789abcdef0';
 
 class PositionManager {
