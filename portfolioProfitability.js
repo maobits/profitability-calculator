@@ -6,16 +6,22 @@ const router = express.Router();
 
 router.post("/portfolio-profitability", async (req, res) => {
   try {
+    console.log("📥 Recibiendo la solicitud de rentabilidad del portafolio...");
+
     const portfolio = req.body;
+
+    // 🔹 Mostrar el cuerpo de la solicitud recibido
+    console.log("🔍 Datos recibidos del portafolio:", JSON.stringify(portfolio, null, 2));
 
     // 🔹 Validar que el cuerpo de la solicitud sea un array
     if (!Array.isArray(portfolio)) {
+      console.error("❌ El cuerpo de la solicitud no es un array.");
       return res.status(400).json({ error: "Invalid request format. Expected an array of positions." });
     }
+    console.log("✅ El cuerpo de la solicitud es válido (array de posiciones).");
 
     // 🔹 Agrupar posiciones por mes de `ClosingDate`
     const groupedPositions = {};
-    
     portfolio.forEach(position => {
       if (position.fechaCierre) {
         const monthKey = moment(position.fechaCierre).format("YYYY-MM"); // 🔹 Agrupamos por "AÑO-MES"
@@ -25,11 +31,23 @@ router.post("/portfolio-profitability", async (req, res) => {
         groupedPositions[monthKey].push(position);
       }
     });
+    console.log("🔹 Posiciones agrupadas por mes:", groupedPositions);
 
     const groupedResults = {};
+    let totalAggregatedState = {
+      precioMercado: 0,
+      precioPromedio: 0,
+      porcentajeAsignacionActiva: 0,
+      rentabilidadActual: 0,
+      rentabilidadAcumuladaTomas: 0,
+      rentabilidadTotalActiva: 0,
+      rentabilidadTotalCerrada: 0, // 🔹 Nueva propiedad
+      count: 0, // Para llevar la cuenta de cuántos ciclos hubo
+    };
 
     for (const monthKey in groupedPositions) {
       const positionsInMonth = groupedPositions[monthKey];
+      console.log(`🔄 Procesando posiciones para el mes: ${monthKey}`);
 
       let consolidatedHistory = [];
       let aggregatedState = {
@@ -43,9 +61,11 @@ router.post("/portfolio-profitability", async (req, res) => {
       };
 
       for (const position of positionsInMonth) {
+        console.log(`⏳ Procesando posición ID: ${position.id}`);
         const posicion = new PositionManager(position.precioEntrada, position.tipoPosicion);
 
         for (const transaccion of position.transacciones) {
+          console.log(`  - Procesando transacción tipo: ${transaccion.tipo}`);
           if (transaccion.tipo === "adicion") {
             posicion.adicionar(transaccion.porcentaje, transaccion.precio);
           } else if (transaccion.tipo === "toma_parcial") {
@@ -88,11 +108,36 @@ router.post("/portfolio-profitability", async (req, res) => {
         historial: consolidatedHistory,
         estadoActual: aggregatedState
       };
+
+      // 🔹 Acumular para el estado general
+      totalAggregatedState.precioMercado += parseFloat(aggregatedState.precioMercado);
+      totalAggregatedState.precioPromedio += parseFloat(aggregatedState.precioPromedio);
+      totalAggregatedState.porcentajeAsignacionActiva += parseFloat(aggregatedState.porcentajeAsignacionActiva);
+      totalAggregatedState.rentabilidadActual += parseFloat(aggregatedState.rentabilidadActual);
+      totalAggregatedState.rentabilidadAcumuladaTomas += parseFloat(aggregatedState.rentabilidadAcumuladaTomas);
+      totalAggregatedState.rentabilidadTotalActiva += parseFloat(aggregatedState.rentabilidadTotalActiva);
+      totalAggregatedState.rentabilidadTotalCerrada += parseFloat(aggregatedState.rentabilidadTotalCerrada);
+      totalAggregatedState.count += 1; // Aumentar el contador de ciclos
     }
 
-    res.json(groupedResults);
+    // 🔹 Calcular el estado general (promedio de todos los ciclos)
+    if (totalAggregatedState.count > 0) {
+      totalAggregatedState.precioMercado = (totalAggregatedState.precioMercado / totalAggregatedState.count).toFixed(2);
+      totalAggregatedState.precioPromedio = (totalAggregatedState.precioPromedio / totalAggregatedState.count).toFixed(2);
+      totalAggregatedState.porcentajeAsignacionActiva = (totalAggregatedState.porcentajeAsignacionActiva / totalAggregatedState.count).toFixed(2);
+      totalAggregatedState.rentabilidadActual = (totalAggregatedState.rentabilidadActual / totalAggregatedState.count).toFixed(2);
+      totalAggregatedState.rentabilidadAcumuladaTomas = (totalAggregatedState.rentabilidadAcumuladaTomas / totalAggregatedState.count).toFixed(2);
+      totalAggregatedState.rentabilidadTotalActiva = (totalAggregatedState.rentabilidadTotalActiva / totalAggregatedState.count).toFixed(2);
+      totalAggregatedState.rentabilidadTotalCerrada = (totalAggregatedState.rentabilidadTotalCerrada / totalAggregatedState.count).toFixed(2);
+    }
+
+    console.log("✅ Rentabilidad del portafolio calculada con éxito.");
+    res.json({
+      groupedResults,
+      estadoGeneral: totalAggregatedState // Devolver el estado general calculado
+    });
   } catch (error) {
-    console.error("Error al procesar la rentabilidad del portafolio:", error);
+    console.error("❌ Error al procesar la rentabilidad del portafolio:", error);
     res.status(500).json({ error: "Error interno del servidor" });
   }
 });
