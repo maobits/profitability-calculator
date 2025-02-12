@@ -41,7 +41,7 @@ router.post("/portfolio-profitability", async (req, res) => {
       rentabilidadActual: 0,
       rentabilidadAcumuladaTomas: 0,
       rentabilidadTotalActiva: 0,
-      rentabilidadTotalCerrada: 0, // 🔹 Nueva propiedad
+      rentabilidadTotalCerrada: 1, // 🔹 Nueva propiedad
       count: 0, // Para llevar la cuenta de cuántos ciclos hubo
     };
 
@@ -116,7 +116,7 @@ router.post("/portfolio-profitability", async (req, res) => {
       totalAggregatedState.rentabilidadActual += parseFloat(aggregatedState.rentabilidadActual);
       totalAggregatedState.rentabilidadAcumuladaTomas += parseFloat(aggregatedState.rentabilidadAcumuladaTomas);
       totalAggregatedState.rentabilidadTotalActiva += parseFloat(aggregatedState.rentabilidadTotalActiva);
-      totalAggregatedState.rentabilidadTotalCerrada += parseFloat(aggregatedState.rentabilidadTotalCerrada);
+      totalAggregatedState.rentabilidadTotalCerrada *= (1 + parseFloat(aggregatedState.rentabilidadTotalCerrada) / 100);
       totalAggregatedState.count += 1; // Aumentar el contador de ciclos
     }
 
@@ -128,7 +128,7 @@ router.post("/portfolio-profitability", async (req, res) => {
       totalAggregatedState.rentabilidadActual = (totalAggregatedState.rentabilidadActual / totalAggregatedState.count).toFixed(2);
       totalAggregatedState.rentabilidadAcumuladaTomas = (totalAggregatedState.rentabilidadAcumuladaTomas / totalAggregatedState.count).toFixed(2);
       totalAggregatedState.rentabilidadTotalActiva = (totalAggregatedState.rentabilidadTotalActiva / totalAggregatedState.count).toFixed(2);
-      totalAggregatedState.rentabilidadTotalCerrada = (totalAggregatedState.rentabilidadTotalCerrada / totalAggregatedState.count).toFixed(2);
+      totalAggregatedState.rentabilidadTotalCerrada = ((totalAggregatedState.rentabilidadTotalCerrada - 1) * 100).toFixed(2);
     }
 
     console.log("✅ Rentabilidad del portafolio calculada con éxito.");
