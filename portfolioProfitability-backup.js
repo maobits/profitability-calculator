@@ -19,9 +19,11 @@ router.post("/portfolio-profitability", async (req, res) => {
     // 🔹 Validar que el cuerpo de la solicitud sea un array
     if (!Array.isArray(portfolio)) {
       console.error("❌ El cuerpo de la solicitud no es un array.");
-      return res.status(400).json({
-        error: "Invalid request format. Expected an array of positions.",
-      });
+      return res
+        .status(400)
+        .json({
+          error: "Invalid request format. Expected an array of positions.",
+        });
     }
     console.log(
       "✅ El cuerpo de la solicitud es válido (array de posiciones)."
@@ -51,9 +53,8 @@ router.post("/portfolio-profitability", async (req, res) => {
       rentabilidadActual: 0,
       rentabilidadAcumuladaTomas: 0,
       rentabilidadTotalActiva: 0,
-      rentabilidadTotalCerrada: 1, // 🔹 Multiplicativo inicializado en 1
-      count: 0, // Para contar posiciones activas
-      totalActivePositions: 0, // 🔹 Contador de posiciones activas para el cálculo correcto
+      rentabilidadTotalCerrada: 1, // 🔹 Nueva propiedad
+      count: 0, // Para llevar la cuenta de cuántos ciclos hubo
     };
 
     for (const monthKey in groupedPositions) {
@@ -67,8 +68,8 @@ router.post("/portfolio-profitability", async (req, res) => {
         porcentajeAsignacionActiva: 0,
         rentabilidadActual: 0,
         rentabilidadAcumuladaTomas: 0,
-        rentabilidadTotalActiva: 0, // 🔹 Solo se usa para el mes
-        rentabilidadTotalCerrada: 0, // 🔹 Se agrupa por mes
+        rentabilidadTotalActiva: 0,
+        rentabilidadTotalCerrada: 0, // 🔹 Nueva propiedad
       };
 
       for (const position of positionsInMonth) {
@@ -92,7 +93,7 @@ router.post("/portfolio-profitability", async (req, res) => {
             const cierreHistorial = posicion.cerrarTotal(transaccion.precio);
             consolidatedHistory.push(...cierreHistorial);
 
-            // 🔹 Acumular la rentabilidad cerrada mensual
+            // 🔹 Sumar la rentabilidad total de posiciones cerradas
             const rentabilidadCierre = cierreHistorial.find(
               (item) => item.tipo === "cierre_total"
             )?.rentabilidadTotal;
@@ -126,13 +127,18 @@ router.post("/portfolio-profitability", async (req, res) => {
         aggregatedState.rentabilidadAcumuladaTomas += parseFloat(
           resultado.rentabilidadAcumuladaTomas
         );
-
-        // 🔹 Acumular Rentabilidad Total Activa correctamente
-        totalAggregatedState.rentabilidadTotalActiva += parseFloat(
+        aggregatedState.rentabilidadTotalActiva += parseFloat(
           resultado.rentabilidadTotalActiva
         );
-        totalAggregatedState.totalActivePositions += 1; // Contar posiciones activas
       }
+
+      // 🔹 Calcular promedios
+      const portfolioSize = positionsInMonth.length || 1;
+      Object.keys(aggregatedState).forEach((key) => {
+        aggregatedState[key] = (aggregatedState[key] / portfolioSize).toFixed(
+          2
+        );
+      });
 
       console.log(
         `  📅 Rentabilidad del mes ${monthKey}:`,
@@ -144,24 +150,44 @@ router.post("/portfolio-profitability", async (req, res) => {
         estadoActual: aggregatedState,
       };
 
-      // 🔹 Aplicar la fórmula para calcular la rentabilidad cerrada total
+      // 🔹 Acumular para el estado general
+      totalAggregatedState.precioMercado += parseFloat(
+        aggregatedState.precioMercado
+      );
+      totalAggregatedState.precioPromedio += parseFloat(
+        aggregatedState.precioPromedio
+      );
+      totalAggregatedState.porcentajeAsignacionActiva += parseFloat(
+        aggregatedState.porcentajeAsignacionActiva
+      );
+      totalAggregatedState.rentabilidadActual += parseFloat(
+        aggregatedState.rentabilidadActual
+      );
+      totalAggregatedState.rentabilidadAcumuladaTomas += parseFloat(
+        aggregatedState.rentabilidadAcumuladaTomas
+      );
+      totalAggregatedState.rentabilidadTotalActiva += parseFloat(
+        aggregatedState.rentabilidadTotalActiva
+      );
       totalAggregatedState.rentabilidadTotalCerrada *=
-        1 + aggregatedState.rentabilidadTotalCerrada / 100;
+        1 + parseFloat(aggregatedState.rentabilidadTotalCerrada) / 100;
+      totalAggregatedState.count += 1;
     }
 
-    // 🔹 Ajustar la rentabilidad total activa dividiéndola por el total de posiciones activas
-    if (totalAggregatedState.totalActivePositions > 0) {
-      totalAggregatedState.rentabilidadTotalActiva = (
-        totalAggregatedState.rentabilidadTotalActiva /
-        totalAggregatedState.totalActivePositions
+    // 🔹 Calcular el estado general (promedio de todos los ciclos)
+    if (totalAggregatedState.count > 0) {
+      Object.keys(totalAggregatedState).forEach((key) => {
+        if (key !== "rentabilidadTotalCerrada" && key !== "count") {
+          totalAggregatedState[key] = (
+            totalAggregatedState[key] / totalAggregatedState.count
+          ).toFixed(2);
+        }
+      });
+      totalAggregatedState.rentabilidadTotalCerrada = (
+        (totalAggregatedState.rentabilidadTotalCerrada - 1) *
+        100
       ).toFixed(2);
     }
-
-    // 🔹 Aplicar la fórmula final para Rentabilidad Total Cerrada
-    totalAggregatedState.rentabilidadTotalCerrada = (
-      (totalAggregatedState.rentabilidadTotalCerrada - 1) *
-      100
-    ).toFixed(2);
 
     console.log("✅ Rentabilidad del portafolio calculada con éxito.");
     console.log("📊 Estado General del Portafolio:");
@@ -173,9 +199,9 @@ router.post("/portfolio-profitability", async (req, res) => {
       "Rentabilidad Actual": totalAggregatedState.rentabilidadActual,
       "Rentabilidad Acumulada Tomas":
         totalAggregatedState.rentabilidadAcumuladaTomas,
-      "Rentabilidad Total Activa": totalAggregatedState.rentabilidadTotalActiva, // 🔹 Valor corregido
+      "Rentabilidad Total Activa": totalAggregatedState.rentabilidadTotalActiva,
       "Rentabilidad Total Cerrada":
-        totalAggregatedState.rentabilidadTotalCerrada, // 🔹 Calculada con la fórmula correcta
+        totalAggregatedState.rentabilidadTotalCerrada,
     });
 
     res.json({
