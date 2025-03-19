@@ -1,186 +1,168 @@
 const express = require("express");
-const PositionManager = require("./positionManager"); // Asegúrate de que el archivo positionManager.js tenga la clase PositionManager
+const PositionManager = require("./positionManager");
 const moment = require("moment");
 
 const router = express.Router();
 
+/**
+ * Función para calcular la rentabilidad total activa utilizando `PositionManager`.
+ */
+const calcularRentabilidadTotalActiva = async (portfolio) => {
+  let rentabilidadTotalActiva = 0;
+  let totalPositions = 0;
+
+  for (const position of portfolio) {
+    const posicion = new PositionManager(
+      position.precioEntrada,
+      position.tipoPosicion
+    );
+
+    for (const transaccion of position.transacciones) {
+      if (transaccion.tipo === "adicion") {
+        posicion.adicionar(transaccion.porcentaje, transaccion.precio);
+      } else if (transaccion.tipo === "toma_parcial") {
+        posicion.tomaParcial(transaccion.porcentaje, transaccion.precio);
+      }
+    }
+
+    const estado = await posicion.mostrarEstado(position.symbol);
+
+    if (!isNaN(parseFloat(estado.rentabilidadTotalActiva))) {
+      rentabilidadTotalActiva += parseFloat(estado.rentabilidadTotalActiva);
+      totalPositions++;
+    }
+  }
+
+  return totalPositions > 0
+    ? (rentabilidadTotalActiva / totalPositions).toFixed(2)
+    : "0.00";
+};
+
+const calcularRentabilidadTotalCerrada = async (portfolio) => {
+  let rentabilidades = []; // Almacenar todas las rentabilidades procesadas
+  let posicionesProcesadas = 0;
+
+  console.log("\n📦 Datos del Portafolio Recibidos en Crudo:");
+  console.log(JSON.stringify(portfolio, null, 2));
+
+  console.log(`\n🔢 Total de Posiciones Recibidas: ${portfolio.length}`);
+
+  console.log("\n📊 Rentabilidad Cerrada por Posición:");
+  console.log(
+    "──────────────────────────────────────────────────────────────────"
+  );
+
+  for (const position of portfolio) {
+    console.log(
+      `\n📌 Procesando posición: ${position.symbol}, Entrada: ${position.precioEntrada}`
+    );
+
+    const posicion = new PositionManager(
+      position.precioEntrada,
+      position.tipoPosicion
+    );
+
+    for (const transaccion of position.transacciones) {
+      if (transaccion.tipo === "adicion") {
+        posicion.adicionar(transaccion.porcentaje, transaccion.precio);
+      } else if (transaccion.tipo === "toma_parcial") {
+        posicion.tomaParcial(transaccion.porcentaje, transaccion.precio);
+      }
+    }
+
+    // 🔹 Obtener el historial de transacciones con `cerrarTotal`
+    const historial = posicion.cerrarTotal(position.precioEntrada);
+
+    posicionesProcesadas++;
+
+    console.log(`\n📊 Historial completo de la posición ${position.symbol}:`);
+    console.log(JSON.stringify(historial, null, 2));
+
+    // ✅ Aquí obtenemos el último cierre total correctamente
+    const ultimaCierreTotal = historial
+      .filter((h) => h.tipo === "cierre_total") // Filtramos solo los cierres totales
+      .pop(); // Tomamos el último
+
+    let rentabilidadCerrada = ultimaCierreTotal
+      ? ultimaCierreTotal.rentabilidadTotal // Extraemos la rentabilidad total correcta
+      : "N/A";
+
+    console.log(
+      `🔎 Rentabilidad total cerrada para ${position.symbol}:`,
+      rentabilidadCerrada
+    );
+
+    // 📌 Agregar a la tabla, asegurando que mostramos la rentabilidad total cerrada correcta
+    rentabilidades.push({
+      "📌 Símbolo": position.symbol,
+      "📅 Fecha de Cierre": position.fechaCierre || "No registrada",
+      "🏁 Rentabilidad Total Cerrada (%)": rentabilidadCerrada, // Ahora sí se muestra la cerrada
+    });
+
+    console.log(
+      "──────────────────────────────────────────────────────────────────"
+    );
+  }
+
+  console.log("\n📊 🔹 Tabla de Rentabilidades Calculadas:");
+  if (rentabilidades.length > 0) {
+    console.table(rentabilidades);
+  } else {
+    console.log(
+      "⚠️ No se encontraron posiciones con cierre total. La tabla está vacía."
+    );
+  }
+
+  console.log(`\n🔢 Total de Posiciones Procesadas: ${posicionesProcesadas}`);
+  console.log("\n✅ Rentabilidad Total Cerrada Calculada.");
+
+  return {
+    rentabilidadTotal: rentabilidades.map(
+      (r) => r["🏁 Rentabilidad Total Cerrada (%)"]
+    ), // Ahora solo devolvemos la rentabilidad cerrada
+    historial: rentabilidades,
+  };
+};
+
+/**
+ * Ruta para procesar el cálculo del portafolio.
+ */
 router.post("/portfolio-profitability", async (req, res) => {
   try {
     console.log("📥 Recibiendo la solicitud de rentabilidad del portafolio...");
 
     const portfolio = req.body;
 
-    // 🔹 Mostrar el cuerpo de la solicitud recibido
-    console.log(
-      "🔍 Datos recibidos del portafolio:",
-      JSON.stringify(portfolio, null, 2)
-    );
-
-    // 🔹 Validar que el cuerpo de la solicitud sea un array
     if (!Array.isArray(portfolio)) {
       console.error("❌ El cuerpo de la solicitud no es un array.");
       return res.status(400).json({
-        error: "Invalid request format. Expected an array of positions.",
+        error: "Formato inválido. Se esperaba un array de posiciones.",
       });
     }
-    console.log(
-      "✅ El cuerpo de la solicitud es válido (array de posiciones)."
+
+    console.log("✅ El cuerpo de la solicitud es válido.");
+
+    // 🔹 Calcular rentabilidades y total de posiciones
+    const rentabilidadTotalActiva = await calcularRentabilidadTotalActiva(
+      portfolio
     );
-
-    // 🔹 Agrupar posiciones por mes de `fechaCierre`
-    const groupedPositions = {};
-    portfolio.forEach((position) => {
-      if (position.fechaCierre) {
-        const monthKey = moment(position.fechaCierre).format("YYYY-MM"); // 🔹 Agrupamos por "AÑO-MES"
-        if (!groupedPositions[monthKey]) {
-          groupedPositions[monthKey] = [];
-        }
-        groupedPositions[monthKey].push(position);
-      }
-    });
-    console.log(
-      "🔹 Posiciones agrupadas por mes:",
-      JSON.stringify(groupedPositions, null, 2)
+    const rentabilidadTotalCerrada = await calcularRentabilidadTotalCerrada(
+      portfolio
     );
+    const totalPositions = portfolio.length;
 
-    const groupedResults = {};
-    let totalAggregatedState = {
-      precioMercado: 0,
-      precioPromedio: 0,
-      porcentajeAsignacionActiva: 0,
-      rentabilidadActual: 0,
-      rentabilidadAcumuladaTomas: 0,
-      rentabilidadTotalActiva: 0,
-      rentabilidadTotalCerrada: 1, // 🔹 Multiplicativo inicializado en 1
-      count: 0, // Para contar posiciones activas
-      totalActivePositions: 0, // 🔹 Contador de posiciones activas para el cálculo correcto
-    };
-
-    for (const monthKey in groupedPositions) {
-      const positionsInMonth = groupedPositions[monthKey];
-      console.log(`🔄 Procesando posiciones para el mes: ${monthKey}`);
-
-      let consolidatedHistory = [];
-      let aggregatedState = {
-        precioMercado: 0,
-        precioPromedio: 0,
-        porcentajeAsignacionActiva: 0,
-        rentabilidadActual: 0,
-        rentabilidadAcumuladaTomas: 0,
-        rentabilidadTotalActiva: 0, // 🔹 Solo se usa para el mes
-        rentabilidadTotalCerrada: 0, // 🔹 Se agrupa por mes
-      };
-
-      for (const position of positionsInMonth) {
-        console.log(
-          `⏳ Procesando posición ID: ${position.id}, símbolo: ${position.symbol}`
-        );
-        const posicion = new PositionManager(
-          position.precioEntrada,
-          position.tipoPosicion
-        );
-
-        for (const transaccion of position.transacciones) {
-          console.log(
-            `  - Procesando transacción tipo: ${transaccion.tipo}, porcentaje: ${transaccion.porcentaje}, precio: ${transaccion.precio}`
-          );
-          if (transaccion.tipo === "adicion") {
-            posicion.adicionar(transaccion.porcentaje, transaccion.precio);
-          } else if (transaccion.tipo === "toma_parcial") {
-            posicion.tomaParcial(transaccion.porcentaje, transaccion.precio);
-          } else if (transaccion.tipo === "cierre_total") {
-            const cierreHistorial = posicion.cerrarTotal(transaccion.precio);
-            consolidatedHistory.push(...cierreHistorial);
-
-            // 🔹 Acumular la rentabilidad cerrada mensual
-            const rentabilidadCierre = cierreHistorial.find(
-              (item) => item.tipo === "cierre_total"
-            )?.rentabilidadTotal;
-            if (rentabilidadCierre) {
-              aggregatedState.rentabilidadTotalCerrada +=
-                parseFloat(rentabilidadCierre);
-              console.log(
-                `    🔹 Rentabilidad total de cierre para ${position.symbol}: ${rentabilidadCierre}%`
-              );
-            }
-          }
-        }
-
-        const resultado = await posicion.mostrarEstado(position.symbol);
-        consolidatedHistory.push(...posicion.historial);
-
-        console.log(
-          `    📊 Estado de posición ${position.symbol}:`,
-          JSON.stringify(resultado, null, 2)
-        );
-
-        // 🔹 Acumular valores para obtener promedios
-        aggregatedState.precioMercado += parseFloat(resultado.precioMercado);
-        aggregatedState.precioPromedio += parseFloat(resultado.precioPromedio);
-        aggregatedState.porcentajeAsignacionActiva += parseFloat(
-          resultado.porcentajeAsignacionActiva
-        );
-        aggregatedState.rentabilidadActual += parseFloat(
-          resultado.rentabilidadActual
-        );
-        aggregatedState.rentabilidadAcumuladaTomas += parseFloat(
-          resultado.rentabilidadAcumuladaTomas
-        );
-
-        // 🔹 Acumular Rentabilidad Total Activa correctamente
-        totalAggregatedState.rentabilidadTotalActiva += parseFloat(
-          resultado.rentabilidadTotalActiva
-        );
-        totalAggregatedState.totalActivePositions += 1; // Contar posiciones activas
-      }
-
-      console.log(
-        `  📅 Rentabilidad del mes ${monthKey}:`,
-        JSON.stringify(aggregatedState, null, 2)
-      );
-
-      groupedResults[monthKey] = {
-        historial: consolidatedHistory,
-        estadoActual: aggregatedState,
-      };
-
-      // 🔹 Aplicar la fórmula para calcular la rentabilidad cerrada total
-      totalAggregatedState.rentabilidadTotalCerrada *=
-        1 + aggregatedState.rentabilidadTotalCerrada / 100;
-    }
-
-    // 🔹 Ajustar la rentabilidad total activa dividiéndola por el total de posiciones activas
-    if (totalAggregatedState.totalActivePositions > 0) {
-      totalAggregatedState.rentabilidadTotalActiva = (
-        totalAggregatedState.rentabilidadTotalActiva /
-        totalAggregatedState.totalActivePositions
-      ).toFixed(2);
-    }
-
-    // 🔹 Aplicar la fórmula final para Rentabilidad Total Cerrada
-    totalAggregatedState.rentabilidadTotalCerrada = (
-      (totalAggregatedState.rentabilidadTotalCerrada - 1) *
-      100
-    ).toFixed(2);
-
-    console.log("✅ Rentabilidad del portafolio calculada con éxito.");
     console.log("📊 Estado General del Portafolio:");
     console.table({
-      "Precio Mercado": totalAggregatedState.precioMercado,
-      "Precio Promedio": totalAggregatedState.precioPromedio,
-      "Porcentaje Asignación Activa":
-        totalAggregatedState.porcentajeAsignacionActiva,
-      "Rentabilidad Actual": totalAggregatedState.rentabilidadActual,
-      "Rentabilidad Acumulada Tomas":
-        totalAggregatedState.rentabilidadAcumuladaTomas,
-      "Rentabilidad Total Activa": totalAggregatedState.rentabilidadTotalActiva, // 🔹 Valor corregido
-      "Rentabilidad Total Cerrada":
-        totalAggregatedState.rentabilidadTotalCerrada, // 🔹 Calculada con la fórmula correcta
+      "Rentabilidad Total Activa (%)": rentabilidadTotalActiva,
+      "Rentabilidad Total Cerrada (%)": rentabilidadTotalCerrada,
+      "Total de Posiciones": totalPositions,
     });
 
     res.json({
-      groupedResults,
-      estadoGeneral: totalAggregatedState,
+      rentabilidadTotalActiva,
+      rentabilidadTotalCerrada: rentabilidadTotalCerrada.rentabilidadTotal, // ✅ Accede correctamente
+      historial: rentabilidadTotalCerrada.historial, // ✅ Ahora se envía el historial completo
+      totalPositions,
     });
   } catch (error) {
     console.error(

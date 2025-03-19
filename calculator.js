@@ -7,7 +7,7 @@ const PositionManager = require("./positionManager");
 
 const app = express();
 const port = 3600;
-const isProduction = true; // Cambiar a true para producción
+const isProduction = false; // Cambiar a true para producción
 
 // 🔹 Middleware
 app.use(express.json()); // Necesario para procesar JSON en las solicitudes
